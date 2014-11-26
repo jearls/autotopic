@@ -6,7 +6,7 @@ The AutoTopic plugin remembers topics for chatrooms and re-sets the topic for th
 Installation
 ============
 
-Download the `autotopic.dll` file into a temporary location, then install it into either your personal plugins directory or the system-wide plugins directory.
+Download the `autotopic.dll` file (https://github.com/jearls/autotopic/releases/download/v0.1-alpha/autotopic.dll) into a temporary location, then install it into either your personal plugins directory or the system-wide plugins directory.
 
 Installing into personal plugins directory
 ------------------------------------------
