@@ -22,7 +22,7 @@
 
 #define PLUGIN_ID "core-jearls-autotopic"
 #define PLUGIN_NAME "AutoTopic"
-#define PLUGIN_VERSION "v0.1.1-alpha"
+#define PLUGIN_VERSION "v0.1.2-alpha"
 #define PLUGIN_AUTHOR "Johnson Earls"
 #define PLUGIN_URL "https://github.com/jearls/autotopic/wiki"
 #define PLUGIN_SUMMARY "Remembers chatroom topics and automatically sets them when needed."
@@ -32,6 +32,9 @@
 
 /* the time (in seconds) after joining a chat in which to check the topic */
 #define CHAT_JOINED_TOPIC_CHECK_TIMER 5
+
+/* the time (in seconds) after enabling the plugin in which to check the topic for all chats */
+#define PLUGIN_LOADED_TOPIC_CHECK_TIMER 1
 
 /* debugging code to write to both debug window and system log ********/
 
@@ -212,6 +215,29 @@ chat_joined_cb(PurpleConversation *conv, void *data) {
 }
 
 /*
+ *  check_all_chats - called on plugin load
+ *  check all current chats to see if we need to set the topic or
+ *  register a topic change
+ */
+
+static void
+check_all_chats() {
+    GList *chat_list ;
+    for (
+            chat_list = purple_get_chats() ;
+            chat_list != NULL ;
+            chat_list = chat_list -> next
+    ) {
+        PurpleConversation *chat = (PurpleConversation *)chat_list -> data ;
+        purple_timeout_add_seconds(
+                PLUGIN_LOADED_TOPIC_CHECK_TIMER,
+                (GSourceFunc)check_topic_cb,
+                (gpointer)chat
+        ) ;
+    }
+}
+
+/*
  *  autotopic_cmd_cb - the autotopic command handler.
  *  handles the commands:
  *    /autotopic on
@@ -350,6 +376,8 @@ plugin_load_hook(PurplePlugin *plugin) {
     register_cmds(plugin) ;
     /*  register any signal handlers  */
     connect_signals(plugin) ;
+    /*  check any current chats for topic changes  */
+    check_all_chats() ;
     /*  return TRUE says continue loading the plugin  */
     return TRUE ;
 }
