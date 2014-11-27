@@ -22,7 +22,7 @@
 
 #define PLUGIN_ID "core-jearls-autotopic"
 #define PLUGIN_NAME "AutoTopic"
-#define PLUGIN_VERSION "v0.1.2-alpha"
+#define PLUGIN_VERSION "v0.1.3-alpha"
 #define PLUGIN_AUTHOR "Johnson Earls"
 #define PLUGIN_URL "https://github.com/jearls/autotopic/wiki"
 #define PLUGIN_SUMMARY "Remembers chatroom topics and automatically sets them when needed."
@@ -35,6 +35,9 @@
 
 /* the time (in seconds) after enabling the plugin in which to check the topic for all chats */
 #define PLUGIN_LOADED_TOPIC_CHECK_TIMER 1
+
+/* the time (in seconds) after a buddy joins a chat in which to set the topic */
+#define CHAT_BUDDY_JOINED_SET_TOPIC_TIMER 1
 
 /* debugging code to write to both debug window and system log ********/
 
@@ -139,6 +142,32 @@ autotopic_remove_topic(PurpleConversation *conv) {
 }
 
 /*
+ *  void autotopic_send_topic_change(PurpleConversation *conv)
+ *  If the chatroom has autotopic enabled, set the topic no matter
+ *  what the current topic is.
+ */
+
+static void
+autotopic_send_topic_change(PurpleConversation *conv) {
+    const char *topic_for_chat;
+    topic_for_chat = autotopic_get_topic(conv) ;
+    if (topic_for_chat != NULL && topic_for_chat[0] != '\0') {
+        gchar *set_topic_error = NULL ;
+        gchar *cmdbuf ;
+        debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Setting topic to \"%s\".\n", topic_for_chat) ;
+        cmdbuf = g_strdup_printf("topic %s", topic_for_chat) ;
+        purple_cmd_do_command(conv, cmdbuf, cmdbuf, &set_topic_error) ;
+        g_free(cmdbuf) ;
+        if (set_topic_error != NULL) {
+            cmdbuf = g_strdup_printf("Error setting topic: %s", set_topic_error) ;
+            g_free(set_topic_error) ;
+            purple_conversation_write(conv, NULL, cmdbuf, PURPLE_MESSAGE_ERROR, time(NULL)) ;
+            g_free(cmdbuf) ;
+        }
+    }
+}
+
+/*
  *  void autotopic_handle_topic_change(PurpleConversation *conv, const char *topic)
  *  Handle a conversation change.  If the chatroom has autotopic enabled,
  *  then either change the saved topic to the new chatroom topic, or
@@ -152,18 +181,7 @@ static void autotopic_handle_topic_change(PurpleConversation *conv, const char *
     topic_for_chat = autotopic_get_topic(conv) ;
     if (topic_for_chat != NULL) {
         if ((new_topic == NULL) || (new_topic[0] == '\0')) {
-            gchar *set_topic_error = NULL ;
-            gchar *cmdbuf ;
-            debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Changing topic to \"%s\".\n", topic_for_chat) ;
-            cmdbuf = g_strdup_printf("topic %s", topic_for_chat) ;
-            purple_cmd_do_command(conv, cmdbuf, cmdbuf, &set_topic_error) ;
-            g_free(cmdbuf) ;
-            if (set_topic_error != NULL) {
-                cmdbuf = g_strdup_printf("Error setting topic: %s", set_topic_error) ;
-                g_free(set_topic_error) ;
-                purple_conversation_write(conv, NULL, cmdbuf, PURPLE_MESSAGE_ERROR, time(NULL)) ;
-                g_free(cmdbuf) ;
-            }
+            autotopic_send_topic_change(conv) ;
         } else {
             autotopic_set_topic(conv) ;
         }
@@ -211,6 +229,70 @@ chat_joined_cb(PurpleConversation *conv, void *data) {
             (GSourceFunc)check_topic_cb,
             (gpointer)conv
     ) ;
+    return ;
+}
+
+/*
+ *  timer callback hash table used by set_topic_cb and chat_buddy_joined_cb
+ */
+
+static GHashTable *timer_hash = NULL ;
+
+/*
+ *  set_topic_cb - timer callback to forcibly set the topic of a chatroom
+ *  removes the chat room name from the timer callback hash table
+ */
+
+static gboolean
+set_topic_cb(gpointer user_data) {
+    PurpleConversation *conv = (PurpleConversation*)user_data ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Set Topic callback: conversation=\"%s\".\n", purple_conversation_get_name(conv) ) ;
+    /*
+     *  make sure timer_hash exists and our conversation is in it.
+     *  if so, remove it from the hash table and send the topic change.
+     */
+    if ((timer_hash != NULL) &&
+            (g_hash_table_lookup(timer_hash, conv) != NULL)
+    ) {
+        g_hash_table_remove(timer_hash, conv) ;
+        autotopic_send_topic_change(conv) ;
+    }
+    /* return FALSE to stop the timer from calling the callback again */
+    return FALSE ;
+}
+
+/*
+ *  chat_buddy_joined_cb - handle joining a chat.
+ *  set a timer to call the set_topic callback.
+ *  maintain a hash table of timer callbacks hashed on the conversation pointer,
+ *  to avoid setting the topic multiple times
+ */
+
+static void
+chat_buddy_joined_cb(PurpleConversation *conv, const char *name, PurpleConvChatBuddyFlags flags, gboolean new_arrival, void *data) {
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Chat Buddy Joined callback: conversation=\"%s\" buddy=\"%s\" flags=0x%X, new_arrival=%d.\n", purple_conversation_get_name(conv), name, flags, new_arrival ) ;
+    /*  initialize timer_hash if needed.  */
+    if (timer_hash == NULL) {
+        timer_hash = g_hash_table_new(NULL, NULL) ;
+    }
+    /*
+     *  only add the timer if:
+     *    the conversation is handled by autotopic,
+     *    the joiner is a new arrival,
+     *    and the conversation does not already exist in the hash table.
+     */
+    if ((autotopic_get_topic(conv) != NULL) &&
+            new_arrival &&
+            (g_hash_table_lookup(timer_hash, conv) == NULL)
+    ) {
+        /*  add the conversation to the hash table  */
+        g_hash_table_insert(timer_hash, conv, conv) ;
+        purple_timeout_add_seconds(
+                CHAT_BUDDY_JOINED_SET_TOPIC_TIMER,
+                (GSourceFunc)set_topic_cb,
+                (gpointer)conv
+        ) ;
+    }
     return ;
 }
 
@@ -337,6 +419,7 @@ connect_signals(PurplePlugin *plugin) {
     void *conv_handle = purple_conversations_get_handle() ;
     purple_signal_connect(conv_handle, "chat-joined", plugin, PURPLE_CALLBACK(chat_joined_cb), NULL) ;
     purple_signal_connect(conv_handle, "chat-topic-changed", plugin, PURPLE_CALLBACK(chat_topic_changed_cb), NULL) ;
+    purple_signal_connect(conv_handle, "chat-buddy-joined", plugin, PURPLE_CALLBACK(chat_buddy_joined_cb), NULL) ;
     /*  Done, nothing to return  */
     return ;
 }
