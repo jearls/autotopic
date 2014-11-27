@@ -22,13 +22,17 @@
 
 #define PLUGIN_ID "core-jearls-autotopic"
 #define PLUGIN_NAME "AutoTopic"
-#define PLUGIN_VERSION "v0.1.3-alpha"
+#define PLUGIN_VERSION "v0.2.0-alpha"
 #define PLUGIN_AUTHOR "Johnson Earls"
 #define PLUGIN_URL "https://github.com/jearls/autotopic/wiki"
 #define PLUGIN_SUMMARY "Remembers chatroom topics and automatically sets them when needed."
 #define PLUGIN_DESCRIPTION "This plugin allows you to mark chatrooms for which you want to automatically set the topic.  Whenever you join an autotopic chatroom which has no topic, or if you're in an autotopic chatroom and the topic is set to blank, the plugin will automatically set the topic to the last recorded topic for that chatroom."
 
 #define PREFS_ROOT "/plugins/core/" PLUGIN_ID
+
+/* sub-preference names for topic and set-on-join preferences */
+#define PREFS_TOPIC "topic"
+#define PREFS_SET_ON_JOIN "set_on_buddy_join"
 
 /* the time (in seconds) after joining a chat in which to check the topic */
 #define CHAT_JOINED_TOPIC_CHECK_TIMER 5
@@ -76,7 +80,7 @@ autotopic_get_topic(PurpleConversation *conv) {
     name = purple_conversation_get_name(conv) ;
     debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_get_topic: conversation=\"%s\"\n", name ) ;
     topic = NULL ;
-    pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    pref_name = g_strdup_printf("%s/%s/%s", PREFS_ROOT, name, PREFS_TOPIC) ;
     if (purple_prefs_exists(pref_name)) {
         topic = purple_prefs_get_string(pref_name) ;
     }
@@ -86,37 +90,91 @@ autotopic_get_topic(PurpleConversation *conv) {
 }
 
 /*
- *  void autotopic_set_topic(PurpleConversation *conv)
- *  Sets the preferences topic to the conversation's current topic.
+ *  gboolean autotopic_get_set_on_join(PurpleConversation *conv)
+ *  Returns the set_on_join preference for the indicated conversation.
+ *  If the conversation is not watched, return FALSE.
+ */
+
+static gboolean
+autotopic_get_set_on_join(PurpleConversation *conv) {
+    gboolean set_on_join = FALSE ;
+    const char *name ;
+    gchar *pref_name ;
+    name = purple_conversation_get_name(conv) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_get_topic: conversation=\"%s\"\n", name ) ;
+    pref_name = g_strdup_printf("%s/%s/%s", PREFS_ROOT, name, PREFS_SET_ON_JOIN) ;
+    if (purple_prefs_exists(pref_name)) {
+        set_on_join = purple_prefs_get_bool(pref_name) ;
+    }
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_get_topic: pref \"%s\" -> %s\n", pref_name, (set_on_join ? "TRUE" : "FALSE")) ;
+    g_free(pref_name) ;
+    return set_on_join ;
+}
+
+/*
+ *  void autotopic_set_topic(PurpleConversation *conv, const char *topic)
+ *  Sets the preferences topic for the given conversation to <topic>
  */
 
 static void
-autotopic_set_topic(PurpleConversation *conv) {
+autotopic_set_topic(PurpleConversation *conv, const char *topic) {
     const char *name;
-    const char *topic;
-    gchar *pref_name ;
+    gchar *chatroom_pref, *topic_pref, *set_on_join_pref ;
     name = purple_conversation_get_name(conv) ;
-    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: conversation = \"%s\"\n", name) ;
-    topic = purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv)) ;
     if (topic == NULL) {
         topic = "" ;
     }
-    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: topic = \"%s\"\n", topic) ;
-    pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
-    if (!purple_prefs_exists(pref_name)) {
-        /*
-         *  work around bug:  the preference can be added by set_string,
-         *  but then the preferences save will not be scheduled.  add it
-         *  as NULL, then when set_string changes it, the save will be
-         *  scheduled.
-         */
-        purple_prefs_add_string(pref_name, NULL) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: conversation = \"%s\", topic=\"%s\"\n", name, topic) ;
+    chatroom_pref = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    topic_pref = g_strdup_printf("%s/%s", chatroom_pref, PREFS_TOPIC) ;
+    set_on_join_pref = g_strdup_printf("%s/%s", chatroom_pref, PREFS_SET_ON_JOIN) ;
+    if (!purple_prefs_exists(chatroom_pref)) {
+        purple_prefs_add_none(chatroom_pref) ;
     }
-    purple_prefs_set_string(pref_name, topic) ;
-    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: pref \"%s\" -> \"%s\"\n", pref_name, topic) ;
-    g_free(pref_name) ;
+    if (!purple_prefs_exists(topic_pref)) {
+        purple_prefs_add_string(topic_pref, NULL) ;
+    }
+    if (!purple_prefs_exists(set_on_join_pref)) {
+        purple_prefs_add_bool(set_on_join_pref, FALSE) ;
+    }
+    purple_prefs_set_string(topic_pref, topic) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: pref \"%s\" -> \"%s\"\n", topic_pref, topic) ;
+    g_free(set_on_join_pref) ;
+    g_free(topic_pref) ;
+    g_free(chatroom_pref) ;
 
     return ;
+}
+
+/*
+ *  void autotopic_set_set_on_join(PurpleConversation *conv, gboolean set_on_join)
+ *  Sets the set_on_join preference for the given conversation to
+ *  <set_on_join>.
+ */
+
+static void
+autotopic_set_set_on_join(PurpleConversation *conv, gboolean set_on_join) {
+    const char *name;
+    gchar *chatroom_pref, *topic_pref, *set_on_join_pref ;
+    name = purple_conversation_get_name(conv) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_set_on_join: conversation = \"%s\"\n", name) ;
+    chatroom_pref = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    topic_pref = g_strdup_printf("%s/%s", chatroom_pref, PREFS_TOPIC) ;
+    set_on_join_pref = g_strdup_printf("%s/%s", chatroom_pref, PREFS_SET_ON_JOIN) ;
+    if (!purple_prefs_exists(chatroom_pref)) {
+        purple_prefs_add_none(chatroom_pref) ;
+    }
+    if (!purple_prefs_exists(topic_pref)) {
+        purple_prefs_add_string(topic_pref, purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv))) ;
+    }
+    if (!purple_prefs_exists(set_on_join_pref)) {
+        purple_prefs_add_bool(set_on_join_pref, !set_on_join) ;
+    }
+    purple_prefs_set_bool(set_on_join_pref, set_on_join) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_set_on_join: pref \"%s\" -> %s\n", set_on_join_pref, (set_on_join ? "TRUE" : "FALSE")) ;
+    g_free(set_on_join_pref) ;
+    g_free(topic_pref) ;
+    g_free(chatroom_pref) ;
 }
 
 /*
@@ -128,16 +186,22 @@ autotopic_set_topic(PurpleConversation *conv) {
 static void
 autotopic_remove_topic(PurpleConversation *conv) {
     const char *name = purple_conversation_get_name(conv) ;
-    gchar *pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    gchar *chatroom_pref = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    gchar *topic_pref = g_strdup_printf("%s/%s", chatroom_pref, PREFS_TOPIC) ;
+    gchar *set_on_join_pref = g_strdup_printf("%s/%s", chatroom_pref, PREFS_SET_ON_JOIN) ;
     /*
      *  work around bug: remove does not schedule preferences save.
      *  set the preference to NULL first, to force a save to be
      *  scheduled, then remove it.
      */
-    purple_prefs_set_string(pref_name, NULL) ;
-    purple_prefs_remove(pref_name) ;
-    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_remove_topic: pref \"%s\" -> XX\n", pref_name) ;
-    g_free(pref_name) ;
+    purple_prefs_set_string(topic_pref, NULL) ;
+    purple_prefs_remove(topic_pref) ;
+    purple_prefs_remove(set_on_join_pref) ;
+    purple_prefs_remove(chatroom_pref) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_remove_topic: pref \"%s\" -> XX\n", chatroom_pref) ;
+    g_free(topic_pref) ;
+    g_free(set_on_join_pref) ;
+    g_free(chatroom_pref) ;
     return ;
 }
 
@@ -183,7 +247,7 @@ static void autotopic_handle_topic_change(PurpleConversation *conv, const char *
         if ((new_topic == NULL) || (new_topic[0] == '\0')) {
             autotopic_send_topic_change(conv) ;
         } else {
-            autotopic_set_topic(conv) ;
+            autotopic_set_topic(conv, new_topic) ;
         }
     }
     return ;
@@ -277,12 +341,12 @@ chat_buddy_joined_cb(PurpleConversation *conv, const char *name, PurpleConvChatB
     }
     /*
      *  only add the timer if:
-     *    the conversation is handled by autotopic,
      *    the joiner is a new arrival,
+     *    the conversation's preference is to set the topic on joins,
      *    and the conversation does not already exist in the hash table.
      */
-    if ((autotopic_get_topic(conv) != NULL) &&
-            new_arrival &&
+    if (new_arrival &&
+            autotopic_get_set_on_join(conv) &&
             (g_hash_table_lookup(timer_hash, conv) == NULL)
     ) {
         /*  add the conversation to the hash table  */
@@ -344,7 +408,9 @@ static PurpleCmdId autotopic_cmd_id = 0;
 /* the autotopic command callback */
 #define AUTOTOPIC_CMD_CB PURPLE_CMD_FUNC(autotopic_cmd_cb)
 /* the autotopic command help string */
-#define AUTOTOPIC_CMD_HELP "autotopic on|off|status:  turn autotopic on or off for the current chatroom, or report the status."
+#define AUTOTOPIC_CMD_HELP "autotopic on|off:  turn autotopic on or off for the current chatroom.\n\
+autotopic status:  report the status of the current chatroom.\n\
+autotopic join|nojoin:  turn on or off setting the topic when new users join the chatroom (implies \"autotopic on\" as well)."
 
 static PurpleCmdRet autotopic_cmd_cb(PurpleConversation *conv,
                               const gchar* cmd,
@@ -363,19 +429,32 @@ static PurpleCmdRet autotopic_cmd_cb(PurpleConversation *conv,
     /* if no arguments, or argument is "status", report status. */
     } else if ((args == NULL) || (args[0] == NULL) || (strcmp(args[0], "status") == 0)) {
         const char *topic_for_chat = autotopic_get_topic(conv) ;
+        gboolean set_on_join = autotopic_get_set_on_join(conv) ;
         if (topic_for_chat == NULL) {
             msg = g_strdup_printf("autotopic is off for this chat.") ;
+        } else if (set_on_join) {
+            msg = g_strdup_printf("autotopic is on for this chat and will set the topic when new users join.") ;
         } else {
             msg = g_strdup_printf("autotopic is on for this chat.") ;
         }
     /* if argument is "on", turn on autotopic. */
-    } else if ((args != NULL) && (strcmp(args[0], "on") == 0)) {
-        autotopic_set_topic(conv) ;
+    } else if (strcmp(args[0], "on") == 0) {
+        const char *topic = purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv)) ;
+        autotopic_set_topic(conv, topic) ;
         msg = g_strdup_printf("autotopic is now on for this chat.") ;
     /* if argument is "off", turn off autotopic. */
-    } else if ((args != NULL) && (strcmp(args[0], "off") == 0)) {
+    } else if (strcmp(args[0], "off") == 0) {
         autotopic_remove_topic(conv) ;
         msg = g_strdup_printf("autotopic is now off for this chat.") ;
+    /* if argument is "join", turn on autotopic and set set_on_joined to TRUE. */
+    } else if (strcmp(args[0], "join") == 0) {
+        autotopic_set_set_on_join(conv, TRUE) ;
+        msg = g_strdup_printf("autotopic will set the topic when new users join this chat.") ;
+    /* if argument is "nojoin", turn on autotopic and set set_on_joined to FALSE. */
+    } else if (strcmp(args[0], "nojoin") == 0) {
+        autotopic_set_set_on_join(conv, FALSE) ;
+        msg = g_strdup_printf("autotopic will NOT set the topic when new users join this chat.") ;
+    /* otherwise, invalid argument... */
     } else {
         *error = g_strdup_printf("Invalid autotopic option \"%s\"", args[0]) ;
         ret = PURPLE_CMD_RET_FAILED ;
@@ -426,12 +505,58 @@ connect_signals(PurplePlugin *plugin) {
 
 /*  Initialize the plugin preferences.
  *  Create the root preference directory if needed.
+ *  If there are chatrooms that have direct content (v0.1 preferences),
+ *    convert them to v0.2 by moving the content to <chatroom>/topic
+ *    and setting <chatroom>/change_on_join to false
  */
 static void
 init_prefs(PurplePlugin *plugin) {
+    GList *children_list ;
     /*  If the root preference directory does not exist, create it  */
     if (!purple_prefs_exists(PREFS_ROOT)) {
         purple_prefs_add_none(PREFS_ROOT) ;
+    }
+    /*  convert v0.1 preferences if needed  */
+    children_list = purple_prefs_get_children_names(PREFS_ROOT) ;
+    if (children_list != NULL) {
+        GList *child_ptr ;
+        for (
+                child_ptr = children_list ;
+                child_ptr != NULL ;
+                child_ptr = child_ptr -> next
+        ) {
+            char *child_pref = (char*)(child_ptr -> data) ;
+            if (purple_prefs_get_type(child_pref) == PURPLE_PREF_STRING) {
+                /*
+                 *  we have a v0.1 preference; get its value, erase it,
+                 *  and recreate using v0.2 format:
+                 *  <chatroom>/topic = <string>
+                 *  <chatroom>/set_on_buddy_join = <boolean>
+                 */
+                gchar *child_val = g_strdup(purple_prefs_get_string(child_pref)) ;
+                gchar *new_pref = NULL ;
+                /*  remove and recreate the base preference  */
+                purple_prefs_remove(child_pref) ;
+                purple_prefs_add_none(child_pref) ;
+                /*  create the set_on_buddy_join preference  */
+                new_pref = g_strdup_printf("%s/%s", child_pref, PREFS_SET_ON_JOIN) ;
+                purple_prefs_add_bool(new_pref, FALSE) ;
+                g_free(new_pref) ;
+                /*  create the topic preference  */
+                new_pref = g_strdup_printf("%s/%s", child_pref, PREFS_TOPIC) ;
+                /*
+                 *  work around libpurple preferences bug:
+                 *  add NULL, then set the value.
+                 *  this forces a preferences save.
+                 */
+                purple_prefs_add_string(new_pref, NULL) ;
+                purple_prefs_set_string(new_pref, child_val) ;
+                g_free(child_val) ;
+                g_free(new_pref) ;
+            }
+            g_free(child_pref) ;
+        }
+        g_list_free(children_list) ;
     }
     /*  Done, nothing to return  */
     return ;
