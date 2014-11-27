@@ -1,30 +1,57 @@
 #define PURPLE_PLUGINS
 
+/* standard C include files */
+
 #include <glib.h>
 #include <string.h>
+#include <stdarg.h>
 
 /*  purple plugin include files  */
 
-#include "debug.h"
-#include "conversation.h"
 #include "cmds.h"
-#include "signals.h"
+#include "conversation.h"
+#include "debug.h"
+#include "eventloop.h"
 #include "plugin.h"
 #include "pluginpref.h"
 #include "prefs.h"
+#include "signals.h"
 #include "version.h"
 
 /*  define my plugin parameters  */
 
 #define PLUGIN_ID "core-jearls-autotopic"
 #define PLUGIN_NAME "AutoTopic"
-#define PLUGIN_VERSION "0.1"
+#define PLUGIN_VERSION "v0.1.1-alpha"
 #define PLUGIN_AUTHOR "Johnson Earls"
 #define PLUGIN_URL "https://github.com/jearls/autotopic/wiki"
 #define PLUGIN_SUMMARY "Remembers chatroom topics and automatically sets them when needed."
 #define PLUGIN_DESCRIPTION "This plugin allows you to mark chatrooms for which you want to automatically set the topic.  Whenever you join an autotopic chatroom which has no topic, or if you're in an autotopic chatroom and the topic is set to blank, the plugin will automatically set the topic to the last recorded topic for that chatroom."
 
 #define PREFS_ROOT "/plugins/core/" PLUGIN_ID
+
+/* the time (in seconds) after joining a chat in which to check the topic */
+#define CHAT_JOINED_TOPIC_CHECK_TIMER 5
+
+/* debugging code to write to both debug window and system log ********/
+
+static gboolean debug_to_system_log = FALSE ;
+
+static void
+debug_and_log(PurpleAccount *acct, PurpleDebugLevel level, char *cat, char *fmt, ...) {
+    va_list args ;
+    gchar *arg_s ;
+    va_start(args, fmt) ;
+    arg_s = g_strdup_vprintf(fmt, args) ;
+    va_end(args) ;
+    purple_debug(level, cat, "%s", arg_s) ;
+    if (debug_to_system_log && (acct != NULL)) {
+        gchar *log_s = g_strdup_printf("%s: %s", cat, arg_s) ;
+        purple_log_write(purple_account_get_log(acct, TRUE), PURPLE_MESSAGE_SYSTEM, cat, time(NULL), log_s) ;
+        g_free(log_s) ;
+    }
+    g_free(arg_s) ;
+}
 
 /* conversation and preference topic handlers *************************/
 
@@ -37,13 +64,17 @@
 
 static const char *
 autotopic_get_topic(PurpleConversation *conv) {
-    const char *topic = NULL ;
-    const char *name = purple_conversation_get_name(conv) ;
-    gchar *pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    const char *topic ;
+    const char *name ;
+    gchar *pref_name ;
+    name = purple_conversation_get_name(conv) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_get_topic: conversation=\"%s\"\n", name ) ;
+    topic = NULL ;
+    pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
     if (purple_prefs_exists(pref_name)) {
         topic = purple_prefs_get_string(pref_name) ;
     }
-    purple_debug_info(PLUGIN_ID, "autotopic_get_topic: pref \"%s\" -> %s%s%s\n", pref_name, (topic ? "\"" : ""), (topic ? topic : "NULL"), (topic ? "\"" : "")) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_get_topic: pref \"%s\" -> %s%s%s\n", pref_name, (topic ? "\"" : ""), (topic ? topic : "NULL"), (topic ? "\"" : "")) ;
     g_free(pref_name) ;
     return topic ;
 }
@@ -55,13 +86,17 @@ autotopic_get_topic(PurpleConversation *conv) {
 
 static void
 autotopic_set_topic(PurpleConversation *conv) {
-    const char *name = purple_conversation_get_name(conv) ;
-    const char *topic = purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv)) ;
-    gchar *pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
+    const char *name;
+    const char *topic;
+    gchar *pref_name ;
+    name = purple_conversation_get_name(conv) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: conversation = \"%s\"\n", name) ;
+    topic = purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv)) ;
     if (topic == NULL) {
         topic = "" ;
     }
-    purple_debug_info(PLUGIN_ID, "autotopic_set_topic: conversation = \"%s\", topic = %s%s%s\n", name, (topic ? "\"" : ""), (topic ? topic : "NULL"), (topic ? "\"" : "")) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: topic = \"%s\"\n", topic) ;
+    pref_name = g_strdup_printf("%s/%s", PREFS_ROOT, name) ;
     if (!purple_prefs_exists(pref_name)) {
         /*
          *  work around bug:  the preference can be added by set_string,
@@ -72,7 +107,7 @@ autotopic_set_topic(PurpleConversation *conv) {
         purple_prefs_add_string(pref_name, NULL) ;
     }
     purple_prefs_set_string(pref_name, topic) ;
-    purple_debug_info(PLUGIN_ID, "autotopic_set_topic: pref \"%s\" -> \"%s\"\n", pref_name, topic) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_set_topic: pref \"%s\" -> \"%s\"\n", pref_name, topic) ;
     g_free(pref_name) ;
 
     return ;
@@ -95,7 +130,7 @@ autotopic_remove_topic(PurpleConversation *conv) {
      */
     purple_prefs_set_string(pref_name, NULL) ;
     purple_prefs_remove(pref_name) ;
-    purple_debug_info(PLUGIN_ID, "autotopic_remove_topic: pref \"%s\" -> XX\n", pref_name) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_remove_topic: pref \"%s\" -> XX\n", pref_name) ;
     g_free(pref_name) ;
     return ;
 }
@@ -109,12 +144,14 @@ autotopic_remove_topic(PurpleConversation *conv) {
  */
 
 static void autotopic_handle_topic_change(PurpleConversation *conv, const char *new_topic) {
-    const char *topic_for_chat = autotopic_get_topic(conv) ;
+    const char *topic_for_chat;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic_handle_topic_change: conversation=\"%s\" new_topic=\"%s\"\n", purple_conversation_get_name(conv), new_topic) ;
+    topic_for_chat = autotopic_get_topic(conv) ;
     if (topic_for_chat != NULL) {
-        if (new_topic[0] == '\0') {
+        if ((new_topic == NULL) || (new_topic[0] == '\0')) {
             gchar *set_topic_error = NULL ;
             gchar *cmdbuf ;
-            purple_debug_info(PLUGIN_ID, "Changing topic to \"%s\".\n", topic_for_chat) ;
+            debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Changing topic to \"%s\".\n", topic_for_chat) ;
             cmdbuf = g_strdup_printf("topic %s", topic_for_chat) ;
             purple_cmd_do_command(conv, cmdbuf, cmdbuf, &set_topic_error) ;
             g_free(cmdbuf) ;
@@ -124,7 +161,7 @@ static void autotopic_handle_topic_change(PurpleConversation *conv, const char *
                 purple_conversation_write(conv, NULL, cmdbuf, PURPLE_MESSAGE_ERROR, time(NULL)) ;
                 g_free(cmdbuf) ;
             }
-        } else if (new_topic != NULL && new_topic[0] != '\0') {
+        } else {
             autotopic_set_topic(conv) ;
         }
     }
@@ -140,19 +177,37 @@ static void autotopic_handle_topic_change(PurpleConversation *conv, const char *
 
 static void
 chat_topic_changed_cb(PurpleConversation *conv, const char *who, const char *topic, void *data) {
-    purple_debug_info(PLUGIN_ID, "Topic changed: who=\"%s\" account username=\"%s\" topic=\"%s\".\n", who, purple_account_get_name_for_display(purple_conversation_get_account(conv)), topic) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Topic changed: who=\"%s\" account username=\"%s\" topic=\"%s\".\n", who, purple_account_get_name_for_display(purple_conversation_get_account(conv)), topic) ;
     autotopic_handle_topic_change(conv, topic) ;
     return ;
 }
 
 /*
+ *  check_topic_cb - timer callback to check the topic of a chatroom
+ */
+
+static gboolean
+check_topic_cb(gpointer user_data) {
+    PurpleConversation *conv = (PurpleConversation*)user_data ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Check Topic callback: conversation=\"%s\".\n", purple_conversation_get_name(conv) ) ;
+    autotopic_handle_topic_change(conv, purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv))) ;
+    /* return FALSE to stop the timer from calling the callback again */
+    return FALSE ;
+}
+
+/*
  *  chat_joined_cb - handle joining a chat.
- *  get the current chat topic and call the topic change handler.
+ *  set a timer to call the check_topic callback.
  */
 
 static void
 chat_joined_cb(PurpleConversation *conv, void *data) {
-    autotopic_handle_topic_change(conv, purple_conv_chat_get_topic(purple_conversation_get_chat_data(conv))) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Chat Joined callback: conversation=\"%s\".\n", purple_conversation_get_name(conv) ) ;
+    purple_timeout_add_seconds(
+            CHAT_JOINED_TOPIC_CHECK_TIMER,
+            (GSourceFunc)check_topic_cb,
+            (gpointer)conv
+    ) ;
     return ;
 }
 
@@ -192,7 +247,7 @@ static PurpleCmdRet autotopic_cmd_cb(PurpleConversation *conv,
     gchar *msg = NULL ;
     *error = NULL ;
     /* check arguments. */
-    purple_debug_info(PLUGIN_ID, "autotopic option %s%s%s.\n", ((args && args[0]) ? "\"" : "") , ((args && args[0]) ? args[0] : "NULL") , ((args && args[0]) ? "\"" : "") ) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "autotopic option %s%s%s.\n", ((args && args[0]) ? "\"" : "") , ((args && args[0]) ? args[0] : "NULL") , ((args && args[0]) ? "\"" : "") ) ;
     /* were we given too many arguments? */
     if (args && args[0] && args[1]) {
         *error = g_strdup_printf("Too many arguments to the autotopic command.") ;
@@ -278,7 +333,7 @@ init_prefs(PurplePlugin *plugin) {
  */
 static void
 init_plugin_hook(PurplePlugin *plugin) {
-    purple_debug_info(PLUGIN_ID, "Plugin Initialized.\n") ;
+    debug_and_log(NULL, PURPLE_DEBUG_INFO, PLUGIN_ID, "Plugin Initialized.\n") ;
     /*  Initialize the plugin's preferences  */
     init_prefs(plugin) ;
     /*  Done, nothing to return  */
@@ -290,7 +345,7 @@ init_plugin_hook(PurplePlugin *plugin) {
  */
 static gboolean
 plugin_load_hook(PurplePlugin *plugin) {
-    purple_debug_info(PLUGIN_ID, "Plugin Loaded.\n") ;
+    debug_and_log(NULL, PURPLE_DEBUG_INFO, PLUGIN_ID, "Plugin Loaded.\n") ;
     /*  register any custom plugin commands  */
     register_cmds(plugin) ;
     /*  register any signal handlers  */
@@ -305,7 +360,7 @@ plugin_load_hook(PurplePlugin *plugin) {
  */
 static gboolean
 plugin_unload_hook(PurplePlugin *plugin) {
-    purple_debug_info(PLUGIN_ID, "Plugin Unloaded.\n") ;
+    debug_and_log(NULL, PURPLE_DEBUG_INFO, PLUGIN_ID, "Plugin Unloaded.\n") ;
     /*  We don't need to do anything special here  */
     /*  return TRUE says continue unloading the plugin  */
     return TRUE ;
@@ -363,4 +418,3 @@ static PurplePluginInfo plugin_info = {
  *  The third parameter is the plugin info block.
  */
 PURPLE_INIT_PLUGIN(autotopic, init_plugin_hook, plugin_info)
-
