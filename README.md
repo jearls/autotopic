@@ -23,8 +23,8 @@ Usage
 
 Launch Pidgin and select the Tools → Plugins menu option. Locate and enable the AutoTopic plugin.  This will enable the `/autotopic` command in chat rooms.
 
-In any chat room where you want AutoTopic to remember the topic, type the command `/autotopic on`.
+In any chat room where you want AutoTopic to remember the topic, type the command `/autotopic on`.  `/autotopic off` will turn AutoTopic off for the chat room.  When AutoTopic is enabled for a chat room, it will remember any topic set for that chat room.  If the topic ever gets un-set, or if you enter the chat room and there is no topic set, AutoTopic will automatically set the topic again to its last remembered topic for that chat room.
 
-`/autotopic off` will turn AutoTopic off for the chat room.  `/autotopic status` will tell you if AutoTopic is enabled or not.
+On some broken chat systems, chatroom topics are not presented to new users when they join a chatroom.  On these systems, using `/autotopic join` will cause autotopic to set the topic again whenever a new user joins.  `/autotopic nojoin` will turn this function off.
 
-When AutoTopic is enabled for a chat room, it will remember any topic set for that chat room.  If the topic ever gets un-set, or if you enter the chat room and there is no topic set, AutoTopic will automatically set the topic again to its last remembered topic for that chat room.
+`/autotopic status` will tell you if AutoTopic is enabled or not, and whether or not autotopic will set the topic whenever a new user joins.
