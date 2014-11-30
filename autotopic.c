@@ -8,21 +8,21 @@
 
 /*  purple plugin include files  */
 
-#include "cmds.h"
-#include "conversation.h"
-#include "debug.h"
-#include "eventloop.h"
-#include "plugin.h"
-#include "pluginpref.h"
-#include "prefs.h"
-#include "signals.h"
-#include "version.h"
+#include <libpurple/cmds.h>
+#include <libpurple/conversation.h>
+#include <libpurple/debug.h>
+#include <libpurple/eventloop.h>
+#include <libpurple/plugin.h>
+#include <libpurple/pluginpref.h>
+#include <libpurple/prefs.h>
+#include <libpurple/signals.h>
+#include <libpurple/version.h>
 
 /*  define my plugin parameters  */
 
 #define PLUGIN_ID "core-jearls-autotopic"
 #define PLUGIN_NAME "AutoTopic"
-#define PLUGIN_VERSION "v0.2.0-alpha"
+#define PLUGIN_VERSION "v0.2.1-alpha"
 #define PLUGIN_AUTHOR "Johnson Earls"
 #define PLUGIN_URL "https://github.com/jearls/autotopic/wiki"
 #define PLUGIN_SUMMARY "Remembers chatroom topics and automatically sets them when needed."
@@ -262,7 +262,7 @@ static void autotopic_handle_topic_change(PurpleConversation *conv, const char *
 
 static void
 chat_topic_changed_cb(PurpleConversation *conv, const char *who, const char *topic, void *data) {
-    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Topic changed: who=\"%s\" account username=\"%s\" topic=\"%s\".\n", who, purple_account_get_name_for_display(purple_conversation_get_account(conv)), topic) ;
+    debug_and_log(purple_conversation_get_account(conv), PURPLE_DEBUG_INFO, PLUGIN_ID, "Topic changed: who=\"%s\" account username=\"%s\" topic=\"%s\".\n", who, purple_account_get_username(purple_conversation_get_account(conv)), topic) ;
     autotopic_handle_topic_change(conv, topic) ;
     return ;
 }

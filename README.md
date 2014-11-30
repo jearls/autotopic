@@ -3,10 +3,10 @@ AutoTopic
 
 The AutoTopic plugin remembers topics for chatrooms and re-sets the topic for those chatrooms if the topic gets un-set.
 
-Installation
-============
+Windows Installation
+====================
 
-Download the `autotopic.dll` file (https://github.com/jearls/autotopic/releases/download/v0.2.0-alpha/autotopic.dll) into a temporary location, then install it into either your personal plugins directory or the system-wide plugins directory.
+Download the `autotopic.dll` file (https://github.com/jearls/autotopic/releases/download/v0.2.1-alpha/autotopic.dll) into a temporary location, then install it into either your personal plugins directory or the system-wide plugins directory.
 
 Installing into personal plugins directory
 ------------------------------------------
@@ -17,6 +17,21 @@ Installing into the system-wide plugins directory
 -------------------------------------------------
 
 Open the Windows Explorer and navigate to `C:\Program Files (x86)\Pidgin\plugins` . Copy the `autotopic.dll` file from the download location into the plugins folder.
+
+Linux Installation
+==================
+
+Download the `autotopic.so` file (https://github.com/jearls/autotopic/releases/download/v0.2.1-alpha/autotopic.so) into a temporary location, then install it into either your personal plugins directory or the system-wide plugins directory.
+
+Installing into personal plugins directory
+------------------------------------------
+
+Your personal plugins directory is the `.purple/plugins` directory in your `$HOME` directory.  The `plugins` directory may not exist, so if necessary, create it inside `.purple`, then copy the `autotopic.so` file into `$HOME/.purple/plugins` .
+
+Installing into the system-wide plugins directory
+-------------------------------------------------
+
+As root, copy `autotopic.so` file to the system-wide plugins directory, `/usr/lib/purple-2/` .
 
 Usage
 =====
